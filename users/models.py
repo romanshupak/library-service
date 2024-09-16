@@ -44,6 +44,18 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(_("email address"), unique=True)
 
+    # Додаємо related_name для уникнення конфлікту
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='custom_user_set',  # Унікальний related_name
+        blank=True,
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='custom_user_permissions_set',  # Унікальний related_name
+        blank=True,
+    )
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
