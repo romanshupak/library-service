@@ -46,7 +46,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
 
         # Додаємо поточного користувача до borrowing
         user = self.context["request"].user
-        # Ось тут ми видаляємо user з validated_data, оскільки він передається окремо
+
         validated_data.pop("user", None)
         borrowing = Borrowing.objects.create(user=user, **validated_data)
 
