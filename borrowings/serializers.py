@@ -1,9 +1,9 @@
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
 
 from books.models import Book
 from books.serializers import BookSerializer
 from borrowings.models import Borrowing
+from borrowings.telegram import send_telegram_message
 
 
 class BorrowingSerializer(serializers.ModelSerializer):
@@ -27,7 +27,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, data):
-        """Перевіряємо, чи є книги в наявності"""
+        """Check if book is available"""
         book = data["book"]
         if book.inventory <= 0:
             raise serializers.ValidationError("This book is out of stock.")
@@ -49,5 +49,15 @@ class BorrowingSerializer(serializers.ModelSerializer):
 
         validated_data.pop("user", None)
         borrowing = Borrowing.objects.create(user=user, **validated_data)
+
+        message = (
+            f"New borrowing created:\n"
+            f"User: {borrowing.user.email}\n"
+            f"Book: {borrowing.book.title}\n"
+            f"Borrowing date: {borrowing.borrow_date}\n"
+            f"Expected return date: {borrowing.expected_return_date}"
+        )
+
+        send_telegram_message(message)
 
         return borrowing
