@@ -34,7 +34,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """Створюємо borrowing, зменшуємо кількість книг та прив'язуємо поточного користувача"""
+        """Create borrowing, зменшуємо кількість книг та прив'язуємо поточного користувача"""
         book = validated_data["book"]
 
         if book.inventory <= 0:

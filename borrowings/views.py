@@ -70,8 +70,3 @@ class BorrowingViewSet(viewsets.ModelViewSet):
             {"message": "The book has been successfully returned."},
             status=status.HTTP_200_OK,
         )
-
-
-
-
-
