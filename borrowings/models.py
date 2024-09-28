@@ -13,3 +13,12 @@ class Borrowing(models.Model):
 
     def __str__(self):
         return f"Borrowing for {self.book.title} by {self.user.email}"
+
+    def calculate_amount_to_pay(self):
+        """
+        Logic for calculating the amount to pay
+         as per amount of days and daily fee
+        """
+        days_borrowed = (self.expected_return_date - self.borrow_date).days
+        daily_rate = self.book.daily_fee
+        return days_borrowed * daily_rate
