@@ -1,10 +1,15 @@
+import logging
+
 import stripe
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from rest_framework import viewsets, status, mixins, serializers
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -34,8 +39,8 @@ class PaymentViewSet(
         """ Validate: ensure that user is authorized to create the payment """
         borrowing = serializer.validated_data.get("borrowing")
 
-        if borrowing.user != user:
-            raise serializers.ValidationError(
+        if borrowing.user != self.request.user:
+            raise ValidationError(
                 "You can only create payment for your own borrowing"
             )
 
@@ -58,6 +63,7 @@ class CreateCheckoutSessionView(APIView):
         try:
             """ Create Stripe Checkout Session """
             session = stripe.checkout.Session.create(
+                payment_method_types=["card"],
                 line_items=[{
                     'price_data': {
                         'currency': 'usd',
@@ -69,8 +75,10 @@ class CreateCheckoutSessionView(APIView):
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url=request.build_absolute_uri('/api/payments/success/'),
-                cancel_url=request.build_absolute_uri('/api/payments/cancel/'),
+                # success_url=request.build_absolute_uri('/api/payments/success/'),
+                # cancel_url=request.build_absolute_uri('/api/payments/cancel/'),
+                success_url="http://localhost:8000/api/payments/success/?session_id={CHECKOUT_SESSION_ID}",
+                cancel_url="http://localhost:8000/api/payments/cancel/?session_id={CHECKOUT_SESSION_ID}",
                 client_reference_id=borrowing.id  # Додаємо borrowing ID
             )
             payment = Payment.objects.create(
@@ -87,55 +95,112 @@ class CreateCheckoutSessionView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@csrf_exempt  # Вимкнення перевірки CSRF для вебхука
+# @api_view(["POST"])
+# @permission_classes([AllowAny])
+# @csrf_exempt
+# def stripe_webhook(request):
+#     payload = request.body
+#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+#     endpoint_secret = settings.STRIPE_WEBHOOK_KEY
+#
+#     try:
+#         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+#     except ValueError:
+#         return HttpResponse(status=400)
+#     except stripe.error.SignatureVerificationError:
+#         return HttpResponse(status=400)
+#
+#     # Process event
+#     if event["type"] == "checkout.session.completed":
+#         session = event["data"]["object"]
+#         session_id = session.get("id")
+#
+#         try:
+#             payment = Payment.objects.get(session_id=session_id)
+#             payment.status = Payment.PaymentStatus.PAID
+#             payment.save()
+#
+#             # Return a response to Stripe to acknowledge receipt of the event
+#             return HttpResponse(status=200)
+#
+#         except Payment.DoesNotExist:
+#             return HttpResponse(status=404)
+#
+#     return HttpResponse(status=200)
+
+
+logger = logging.getLogger(__name__)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@csrf_exempt
 def stripe_webhook(request):
     payload = request.body
-    sig_header = request.META['HTTP_STRIPE_SIGNATURE']
-    event = None
+    sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+    endpoint_secret = settings.STRIPE_ENDPOINT_SECRET_KEY
+
+    logger.info("Received webhook from Stripe")
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError:
-        return JsonResponse({'status': 'invalid payload'}, status=400)
-    except stripe.error.SignatureVerificationError:
-        return JsonResponse({'status': 'invalid signature'}, status=400)
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        logger.info(f"Stripe event constructed successfully: {event['type']}")
+    except ValueError as e:
+        logger.error(f"Invalid payload: {str(e)}")
+        return HttpResponse(status=400)
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Signature verification failed: {str(e)}")
+        return HttpResponse(status=400)
 
-    # Обробляємо подію
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
+    # Process event
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        session_id = session.get("id")
+        logger.info(f"Processing session ID: {session_id}")
 
-        # Отримання borrowing (збережіть reference_id у session для відстеження)
-        borrowing_id = session.get('client_reference_id')  # тут ви повинні зберігати borrowing_id під час створення сесії
-        if not borrowing_id:
-            return JsonResponse({'status': 'missing reference ID'}, status=400)
+        try:
+            payment = Payment.objects.get(session_id=session_id)
+            payment.status = Payment.PaymentStatus.PAID
+            payment.save()
+            logger.info(f"Payment {session_id} updated to PAID.")
+            return HttpResponse(status=200)
+        except Payment.DoesNotExist:
+            logger.error(f"Payment with session ID {session_id} does not exist.")
+            return HttpResponse(status=404)
 
-        borrowing = get_object_or_404(Borrowing, pk=borrowing_id)
-
-        # # Створення нового запису у таблиці Payment
-        # payment = Payment.objects.create(
-        #     status=Payment.PaymentStatus.PAID,
-        #     borrowing=borrowing,
-        #     session_id=session['id'],
-        #     money_to_pay=session['amount_total'] / 100,  # конвертація з центів
-        #     session_url=session['url']
-        # )
-
-        # Оновлення статусу існуючого платежу
-        payment = get_object_or_404(Payment, session_id=session['id'])
-        payment.status = Payment.PaymentStatus.PAID
-        payment.money_to_pay = session['amount_total'] / 100  # конвертація з центів
-        payment.session_url = session['url']  # якщо URL змінився
-        payment.borrowing = borrowing
-        payment.save()  # зберігаємо зміни
-
-    return JsonResponse({'status': 'success'}, status=200)
+    logger.info("Event processed successfully")
+    return HttpResponse(status=200)
 
 
-def success_view(request):
-    return JsonResponse({"message": "Payment succeeded!"})
+class PaymentSuccessView(APIView):
+    def get(self, request):
+        session_id = request.query_params.get("session_id")
+
+        if not session_id:
+            return Response(
+                {"error": "Session ID not provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            payment = Payment.objects.get(session_id=session_id)
+            return Response(
+                {
+                    "message": "Payment status",
+                    "session_id": session_id,
+                    "status": payment.status,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Payment not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
 
 def cancel_view(request):
-    return JsonResponse({"message": "Payment was canceled."})
+    return JsonResponse(
+        {"message": "Payment was canceled."
+                    " You can complete the payment later, "
+                    "but the session is available for only 24 hours."}
+    )
