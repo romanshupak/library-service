@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import stripe
 from django.conf import settings
 from payments.models import Payment
@@ -7,7 +9,8 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 def create_stripe_session(borrowing):
     # Використовуємо метод для обчислення загальної суми
-    total_amount = borrowing.calculate_amount_to_pay()
+    # total_amount = borrowing.calculate_amount_to_pay()
+    total_price = borrowing.book.daily_fee * Decimal((borrowing.expected_return_date - borrowing.borrow_date).days)
 
     # Створюємо Stripe сесію
     session = stripe.checkout.Session.create(
@@ -18,7 +21,7 @@ def create_stripe_session(borrowing):
                 'product_data': {
                     'name': borrowing.book.title,
                 },
-                'unit_amount': int(total_amount * 100),  # Stripe використовує суми в центрах
+                'unit_amount': int(total_price * 100),  # Stripe використовує суми в центрах
             },
             'quantity': 1,
         }],
@@ -33,7 +36,8 @@ def create_stripe_session(borrowing):
         borrowing=borrowing,
         session_url=session.url,
         session_id=session.id,
-        money_to_pay=total_amount,
+        # money_to_pay=total_amount,
+        money_to_pay=total_price,
         status=Payment.PaymentStatus.PENDING,  # Встановлюємо статус платежу
         type=Payment.PaymentType.PAYMENT  # Встановлюємо тип платежу
     )
