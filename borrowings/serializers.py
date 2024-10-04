@@ -65,7 +65,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
         borrowing = Borrowing.objects.create(user=user, **validated_data)
 
         # Виклик функції для створення сесії Stripe
-        create_stripe_session(borrowing)
+        session = create_stripe_session(borrowing)
 
         message = (
             f"New borrowing created:\n"
@@ -77,4 +77,10 @@ class BorrowingSerializer(serializers.ModelSerializer):
 
         send_telegram_message(message)
 
-        return borrowing
+        # Return the borrowing and session URL
+        return {
+            "borrowing": borrowing,
+            "session_url": session.url  # Return the session URL
+        }
+
+        # return borrowing
