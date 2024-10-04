@@ -4,7 +4,7 @@ from rest_framework import routers
 from payments.views import (
     PaymentViewSet,
     CreateCheckoutSessionView,
-    stripe_webhook, success_view, cancel_view
+    stripe_webhook, cancel_view, PaymentSuccessView
 )
 
 router = routers.DefaultRouter()
@@ -17,9 +17,11 @@ urlpatterns = [
         CreateCheckoutSessionView.as_view(),
         name="payment-create-checkout-session"
     ),
-    path("webhook/", stripe_webhook, name="stripe-webhook"),
-    path("success/", success_view, name="success"),
-    path("cancel/", cancel_view, name="cancel"),
+    # path("webhook/", stripe_webhook, name="stripe-webhook"),
+    path("webhooks/stripe/", stripe_webhook, name="stripe-webhook"),
+    path("success/", PaymentSuccessView.as_view(), name="payment_success")
+    # path("success/", success_view, name="success"),
+    # path("cancel/", cancel_view, name="cancel"),
 ]
 
 app_name = "payments"
