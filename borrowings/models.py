@@ -1,6 +1,7 @@
 from django.db import models
 
 from books.models import Book
+from borrowings.utils import create_stripe_session_for_fine
 from users.models import User
 
 
@@ -31,12 +32,18 @@ class Borrowing(models.Model):
         """
         from payments.models import Payment
 
-        fine_amount = days_of_overdue * self.book.daily_fee * self.FINE_MULTIPLIER
+        daily_fee = self.book.daily_fee  # Щоденна плата за книгу
+        fine_amount = days_of_overdue * daily_fee * self.FINE_MULTIPLIER
 
-        # Create record for Payment model for fine
+        # Створюємо Stripe сесію для оплати штрафу
+        payment = create_stripe_session_for_fine(self, fine_amount)
+
+        # Створюємо запис платежу в системі
         Payment.objects.create(
-            status=Payment.PaymentStatus.PAID,
             borrowing=self,
             money_to_pay=fine_amount,
+            status=Payment.PaymentStatus.PAID,
             type=Payment.PaymentType.FINE,
+            session_url=payment['session_url'],
+            session_id=payment['session_id']
         )
