@@ -15,7 +15,8 @@ from borrowings.utils import create_stripe_session, create_stripe_session_for_fi
 class BorrowingViewSet(viewsets.ModelViewSet):
     FINE_MULTIPLIER = 2  # Коефіцієнт для розрахунку штрафу
 
-    queryset = Borrowing.objects.all()
+    # queryset = Borrowing.objects.all()
+    queryset = Borrowing.objects.select_related("book", "user")
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
 

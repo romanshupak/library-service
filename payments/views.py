@@ -23,7 +23,8 @@ class PaymentViewSet(
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet
 ):
-    queryset = Payment.objects.all()
+    # queryset = Payment.objects.all()
+    queryset = Payment.objects.select_related("borrowing")
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
 
