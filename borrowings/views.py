@@ -9,10 +9,12 @@ from rest_framework.response import Response
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
 from borrowings.telegram import send_telegram_message
-from borrowings.utils import create_stripe_session
+from borrowings.utils import create_stripe_session, create_stripe_session_for_fine
 
 
 class BorrowingViewSet(viewsets.ModelViewSet):
+    FINE_MULTIPLIER = 2  # Коефіцієнт для розрахунку штрафу
+
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
@@ -45,8 +47,6 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    FINE_MULTIPLIER = 2  # Коефіцієнт для розрахунку штрафу
-
     @action(
         detail=True,
         methods=["POST"],
@@ -62,23 +62,50 @@ class BorrowingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Оновлюємо дату повернення
         borrowing.actual_return_date = timezone.now()
+        # borrowing.save()
 
+        # Перевіряємо чи книга повернута вчасно
         expected_return_datetime = timezone.make_aware(
             datetime.combine(
                 borrowing.expected_return_date,
-                datetime.min.time())
+                datetime.min.time()
+            )
         )
 
         if borrowing.actual_return_date > expected_return_datetime:
             days_of_overdue = (
                     borrowing.actual_return_date - expected_return_datetime
             ).days
-            borrowing.create_fine_payment(days_of_overdue)
 
-        # Оновлюємо дату повернення та збільшуємо кількість книг
+            # Розрахунок суми штрафу
+            daily_fee = borrowing.book.daily_fee
+            fine_amount = days_of_overdue * daily_fee * self.FINE_MULTIPLIER
+
+            # Створюємо Stripe-сесію для штрафу
+            stripe_session = create_stripe_session_for_fine(borrowing, fine_amount)
+
+            # Створюємо платіж за штраф
+            borrowing.create_fine_payment(days_of_overdue)
+            borrowing.book.inventory += 1
+            borrowing.book.save()
+            borrowing.save()
+
+            return Response(
+                {
+                    "message": "The book has been successfully returned with a fine.",
+                    "fine_amount": fine_amount,
+                    "payment_url": stripe_session['session_url']
+                },
+                status=status.HTTP_200_OK
+            )
+
+        # Оновлюємо дату повернення та збільшуємо inventory +1
         borrowing.book.inventory += 1
+
         borrowing.book.save()
+
         borrowing.save()
 
         return Response(
