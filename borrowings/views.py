@@ -1,10 +1,13 @@
 from django.utils import timezone
 from datetime import datetime
+
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.schemas import openapi
 
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
@@ -12,6 +15,18 @@ from borrowings.telegram import send_telegram_message
 from borrowings.utils import create_stripe_session, create_stripe_session_for_fine
 
 
+@extend_schema(
+    summary="Retrieve borrowings",
+    description="This endpoint allows users to retrieve borrowings. "
+                "Non admin users can only view their own borrowings, "
+                "while admins can view all borrowings. "
+                "Additionally, borrowings can be filtered by 'is_active' "
+                "and 'user_id'.",
+    request=BorrowingSerializer,
+    responses={
+        200: BorrowingSerializer(many=True),
+    },
+)
 class BorrowingViewSet(viewsets.ModelViewSet):
     FINE_MULTIPLIER = 2  # Коефіцієнт для розрахунку штрафу
 
