@@ -75,8 +75,6 @@ class CreateCheckoutSessionView(APIView):
                     'quantity': 1,
                 }],
                 mode='payment',
-                # success_url=request.build_absolute_uri('/api/payments/success/'),
-                # cancel_url=request.build_absolute_uri('/api/payments/cancel/'),
                 success_url="http://localhost:8000/api/payments/success/?session_id={CHECKOUT_SESSION_ID}",
                 cancel_url="http://localhost:8000/api/payments/cancel/?session_id={CHECKOUT_SESSION_ID}",
                 client_reference_id=borrowing.id  # Додаємо borrowing ID
@@ -93,40 +91,6 @@ class CreateCheckoutSessionView(APIView):
             return Response({"url": session.url}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# @api_view(["POST"])
-# @permission_classes([AllowAny])
-# @csrf_exempt
-# def stripe_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-#     endpoint_secret = settings.STRIPE_WEBHOOK_KEY
-#
-#     try:
-#         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-#     except ValueError:
-#         return HttpResponse(status=400)
-#     except stripe.error.SignatureVerificationError:
-#         return HttpResponse(status=400)
-#
-#     # Process event
-#     if event["type"] == "checkout.session.completed":
-#         session = event["data"]["object"]
-#         session_id = session.get("id")
-#
-#         try:
-#             payment = Payment.objects.get(session_id=session_id)
-#             payment.status = Payment.PaymentStatus.PAID
-#             payment.save()
-#
-#             # Return a response to Stripe to acknowledge receipt of the event
-#             return HttpResponse(status=200)
-#
-#         except Payment.DoesNotExist:
-#             return HttpResponse(status=404)
-#
-#     return HttpResponse(status=200)
 
 
 logger = logging.getLogger(__name__)
@@ -182,19 +146,38 @@ class PaymentSuccessView(APIView):
             )
 
         try:
-            payment = Payment.objects.get(session_id=session_id)
-            return Response(
-                {
-                    "message": "Payment status",
-                    "session_id": session_id,
-                    "status": payment.status,
-                },
-                status=status.HTTP_200_OK,
-            )
+            # Отримуємо сесію Stripe для перевірки статусу
+            session = stripe.checkout.Session.retrieve(session_id)
+
+            if session.payment_status == 'paid':
+                # Якщо статус оплати "paid", оновлюємо статус в базі даних
+                payment = Payment.objects.get(session_id=session_id)
+                payment.status = "success"
+                payment.save()
+
+                return Response(
+                    {
+                        "message": "Payment successful",
+                        "session_id": session_id,
+                        "status": payment.status,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                # Якщо статус не "paid", повертаємо помилку
+                return Response(
+                    {"error": "Payment not completed"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         except Payment.DoesNotExist:
             return Response(
                 {"error": "Payment not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        except stripe.error.StripeError as e:
+            return Response(
+                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
 
 
