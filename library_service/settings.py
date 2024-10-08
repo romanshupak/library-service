@@ -170,26 +170,5 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 STRIPE_ENDPOINT_SECRET_KEY = os.getenv("STRIPE_ENDPOINT_SECRET_KEY")
 
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'handlers': {
-#         'console': {
-#             'class': 'logging.StreamHandler',
-#         },
-#     },
-#     'loggers': {
-#         'django': {
-#             'handlers': ['console'],
-#             'level': 'DEBUG',
-#         },
-#         'payments': {
-#             'handlers': ['console'],
-#             'level': 'INFO',
-#             'propagate': True,
-#         },
-#     },
-# }
-
 STRIPE_SUCCESS_URL = "http://localhost:8000/api/payments/success/?session_id={CHECKOUT_SESSION_ID}"
 STRIPE_CANCEL_URL = "http://localhost:8000/api/payments/cancel/?session_id={CHECKOUT_SESSION_ID}"
