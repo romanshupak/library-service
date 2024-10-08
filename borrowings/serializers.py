@@ -82,5 +82,3 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "borrowing": borrowing,
             "session_url": session.url  # Return the session URL
         }
-
-        # return borrowing
