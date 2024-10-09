@@ -15,6 +15,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
         write_only=True
     )
     payments = PaymentSerializer(many=True, read_only=True)  # Додаємо поле для відображення платежів
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Borrowing
