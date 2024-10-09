@@ -10,7 +10,7 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 def create_stripe_session(borrowing):
 
     # Використовуємо метод для обчислення загальної суми
-    total_price = borrowing.book.daily_fee * Decimal(
+    total_price = Decimal(borrowing.book.daily_fee) * Decimal(
         (borrowing.expected_return_date - borrowing.borrow_date).days
     )
 
