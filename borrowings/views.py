@@ -131,7 +131,6 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Метод для обробки логіки створення позичання"""
-        # borrowing = serializer.save() # TODO  change 135 on 134
         borrowing = serializer.save(user=self.request.user)  # Зберігаємо нове позичання та додаємо користувача
         payment = create_stripe_session(borrowing)  # Створюємо сесію Stripe
 
