@@ -11,8 +11,14 @@ class Borrowing(models.Model):
     borrow_date = models.DateField()
     expected_return_date = models.DateField()
     actual_return_date = models.DateField(null=True, blank=True)
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="borrowings")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="borrowings")
+    book = models.ForeignKey(
+        Book, on_delete=models.CASCADE,
+        related_name="borrowings"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name="borrowings"
+    )
 
     def __str__(self):
         return f"Borrowing for {self.book.title} by {self.user.email}"
@@ -32,13 +38,13 @@ class Borrowing(models.Model):
         """
         from payments.models import Payment
 
-        daily_fee = self.book.daily_fee  # Щоденна плата за книгу
+        daily_fee = self.book.daily_fee  # Daily payment for book
         fine_amount = days_of_overdue * daily_fee * self.FINE_MULTIPLIER
 
-        # Створюємо Stripe сесію для оплати штрафу
+        # Create Stripe session for fine payment
         payment = create_stripe_session_for_fine(self, fine_amount)
 
-        # Створюємо запис платежу в системі
+        # Create record of payment in database
         Payment.objects.create(
             borrowing=self,
             money_to_pay=fine_amount,

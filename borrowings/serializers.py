@@ -11,10 +11,11 @@ class BorrowingSerializer(serializers.ModelSerializer):
     book = BookSerializer(read_only=True)
     book_id = serializers.PrimaryKeyRelatedField(
         queryset=Book.objects.all(),
-        source='book',
+        source="book",
         write_only=True
     )
-    payments = PaymentSerializer(many=True, read_only=True)  # Додаємо поле для відображення платежів
+    # Add field to show payments
+    payments = PaymentSerializer(many=True, read_only=True)
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
@@ -34,11 +35,11 @@ class BorrowingSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         book = data["book"]
 
-        # Перевірка, чи книга є в наявності
+        # Checking if book is available
         if book.inventory <= 0:
             raise serializers.ValidationError("This book is out of stock.")
 
-        # Перевірка, чи користувач уже має активне позичення
+        # Checking if user has an active borrowing
         active_borrowings = Borrowing.objects.filter(
             user=user,
             actual_return_date__isnull=True
@@ -52,20 +53,21 @@ class BorrowingSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """Create borrowing, зменшуємо кількість книг та прив'язуємо поточного користувача"""
+        """Create borrowing, decrease amount of books
+        and connect current"""
         book = validated_data["book"]
 
-        # Зменшуємо кількість книг на 1
+        # Decrease amount of books for 1
         book.inventory -= 1
         book.save()
 
-        # Додаємо поточного користувача до borrowing
+        # Add current user to borrowing
         user = self.context["request"].user
 
         validated_data.pop("user", None)
         borrowing = Borrowing.objects.create(user=user, **validated_data)
 
-        # Виклик функції для створення сесії Stripe
+        # Call func for creation session Stripe
         session = create_stripe_session(borrowing)
 
         message = (
@@ -81,5 +83,5 @@ class BorrowingSerializer(serializers.ModelSerializer):
         # Return the borrowing and session URL
         return {
             "borrowing": borrowing,
-            "session_url": session.url  # Return the session URL
+            "session_url": session.url
         }

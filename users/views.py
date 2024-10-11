@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -10,14 +11,14 @@ from users.serializers import UserSerializer
 
 
 @extend_schema(
-        summary="Create a new user",
-        description="This endpoint allows you to create a new user "
-                    "by providing the necessary email and password.",
-        request=UserSerializer,
-        responses={
-            201: UserSerializer,
-            400: "Bad Request",
-        },
+    summary="Create a new user",
+    description="This endpoint allows you to create a new user "
+                "by providing the necessary email and password.",
+    request=UserSerializer,
+    responses={
+        201: UserSerializer,
+        400: "Bad Request",
+    },
 )
 class CreateUserView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -40,13 +41,17 @@ class ManageUserView(generics.RetrieveUpdateAPIView):
     permission_classes = (IsAuthenticated,)
 
     def get_object(self):
-        return self.request.user.objects.prefetch_related("groups", "user_permissions")
+        """Use prefetch_related method to retrieve and update user"""
+        return (get_user_model()
+                .objects.prefetch_related("groups", "user_permissions")
+                .get(id=self.request.user.id))
 
 
 @extend_schema(
     summary="User login",
     description="This endpoint allows users to log in by providing "
-                "their email and password, and it returns an authentication token.",
+                "their email and password, "
+                "and it returns an authentication token.",
     request=AuthTokenSerializer,
     responses={
         200: "Token",

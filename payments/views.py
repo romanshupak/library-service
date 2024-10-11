@@ -4,8 +4,7 @@ import stripe
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-from rest_framework import viewsets, status, mixins, serializers
+from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
@@ -19,11 +18,8 @@ from payments.serializers import PaymentSerializer
 
 
 class PaymentViewSet(
-    mixins.ListModelMixin,
-    mixins.RetrieveModelMixin,
-    viewsets.GenericViewSet
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
-    # queryset = Payment.objects.all()
     queryset = Payment.objects.select_related("borrowing")
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
@@ -45,12 +41,13 @@ class PaymentViewSet(
                 "You can only create payment for your own borrowing"
             )
 
-        serializer.save(user=self.request.user)
+        # serializer.save(user=self.request.user)
+        serializer.save(user=user)
 
 
 class CreateCheckoutSessionView(APIView):
     """
-    Створює Stripe сесію для оплати і повертає URL для переходу на Stripe Checkout.
+    Create Stripe session for payment and returns URL for Stripe Checkout
     """
 
     def post(self, request, pk):
@@ -62,25 +59,35 @@ class CreateCheckoutSessionView(APIView):
         stripe.api_key = settings.STRIPE_SECRET_KEY
 
         try:
-            """ Create Stripe Checkout Session """
+            """Create Stripe Checkout Session"""
             session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
-                line_items=[{
-                    'price_data': {
-                        'currency': 'usd',
-                        'product_data': {
-                            'name': f'Book payment {borrowing.book.title}',
+                line_items=[
+                    {
+                        "price_data": {
+                            "currency": "usd",
+                            "product_data": {
+                                "name": f"Book payment {borrowing.book.title}",
+                            },
+                            "unit_amount": int(
+                                amount_to_pay * 100
+                            ),  # calculate in cents
                         },
-                        'unit_amount': int(amount_to_pay * 100),  # calculate in cents
-                    },
-                    'quantity': 1,
-                }],
-                mode='payment',
-                success_url="http://localhost:8000/api/payments/success/?session_id={CHECKOUT_SESSION_ID}",
-                cancel_url="http://localhost:8000/api/payments/cancel/?session_id={CHECKOUT_SESSION_ID}",
-                client_reference_id=borrowing.id  # Додаємо borrowing ID
+                        "quantity": 1,
+                    }
+                ],
+                mode="payment",
+                success_url=(
+                    "http://localhost:8000/api/payments/"
+                    "success/?session_id={CHECKOUT_SESSION_ID}"
+                ),
+                cancel_url=(
+                    "http://localhost:8000/api/payments/"
+                    "cancel/?session_id={CHECKOUT_SESSION_ID}"
+                ),
+                client_reference_id=borrowing.id,  # Add borrowing ID
             )
-            payment = Payment.objects.create(
+            Payment.objects.create(
                 status=Payment.PaymentStatus.PENDING,
                 type=Payment.PaymentType.PAYMENT,
                 session_url=session.url,
@@ -91,7 +98,9 @@ class CreateCheckoutSessionView(APIView):
 
             return Response({"url": session.url}, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 logger = logging.getLogger(__name__)
@@ -108,7 +117,9 @@ def stripe_webhook(request):
     logger.info("Received webhook from Stripe")
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
         logger.info(f"Stripe event constructed successfully: {event['type']}")
     except ValueError as e:
         logger.error(f"Invalid payload: {str(e)}")
@@ -130,7 +141,9 @@ def stripe_webhook(request):
             logger.info(f"Payment {session_id} updated to PAID.")
             return HttpResponse(status=200)
         except Payment.DoesNotExist:
-            logger.error(f"Payment with session ID {session_id} does not exist.")
+            logger.error(
+                f"Payment with session ID {session_id} does not exist."
+            )
             return HttpResponse(status=404)
 
     logger.info("Event processed successfully")
@@ -143,17 +156,18 @@ class PaymentSuccessView(APIView):
 
         if not session_id:
             return Response(
-                {"error": "Session ID not provided"}, status=status.HTTP_400_BAD_REQUEST
+                {"error": "Session ID not provided"},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            # Отримуємо сесію Stripe для перевірки статусу
+            # Get session Stripe for checking of status
             session = stripe.checkout.Session.retrieve(session_id)
 
-            if session.payment_status == 'paid':
-                # Якщо статус оплати "paid", оновлюємо статус в базі даних
+            if session.payment_status == "paid":
+                # If payment status "paid", update status in db
                 payment = Payment.objects.get(session_id=session_id)
-                payment.status = "success"
+                payment.status = "PAID"
                 payment.save()
 
                 return Response(
@@ -165,26 +179,30 @@ class PaymentSuccessView(APIView):
                     status=status.HTTP_200_OK,
                 )
             else:
-                # Якщо статус не "paid", повертаємо помилку
+                # If status is not "paid", return error
                 return Response(
                     {"error": "Payment not completed"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
         except Payment.DoesNotExist:
             return Response(
-                {"error": "Payment not found"}, status=status.HTTP_404_NOT_FOUND
+                {"error": "Payment not found"},
+                status=status.HTTP_404_NOT_FOUND
             )
 
         except stripe.error.StripeError as e:
             return Response(
-                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 
 def cancel_view(request):
     return JsonResponse(
-        {"message": "Payment was canceled."
-                    " You can complete the payment later, "
-                    "but the session is available for only 24 hours."}
+        {
+            "message": "Payment was canceled."
+            " You can complete the payment later, "
+            "but the session is available for only 24 hours."
+        }
     )

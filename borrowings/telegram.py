@@ -14,7 +14,8 @@ def send_telegram_message(message):
 
     try:
         response = requests.post(url, data=payload, timeout=10)
-        response.raise_for_status()  # Raises an exception for 4xx/5xx responses
+        # Raises an exception for 4xx/5xx responses
+        response.raise_for_status()
     except RequestException as e:
         """Logging of exception for further analysis"""
         print(f"Failed to send Telegram message: {e}")

@@ -1,7 +1,6 @@
 from datetime import timedelta, datetime
 
 from celery import shared_task
-from dateutil.utils import today
 
 from borrowings.models import Borrowing
 from borrowings.telegram import send_telegram_message

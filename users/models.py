@@ -44,15 +44,15 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(_("email address"), unique=True)
 
-    # Додаємо related_name для уникнення конфлікту
+    # Add related_name to avoid the conflict
     groups = models.ManyToManyField(
         "auth.Group",
-        related_name="custom_user_set",  # Унікальний related_name
+        related_name="custom_user_set",  # Unique related_name
         blank=True,
     )
     user_permissions = models.ManyToManyField(
         "auth.Permission",
-        related_name="custom_user_permissions_set",  # Унікальний related_name
+        related_name="custom_user_permissions_set",  # Unique related_name
         blank=True,
     )
 

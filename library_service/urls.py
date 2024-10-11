@@ -39,7 +39,11 @@ urlpatterns = [
         include("payments.urls", namespace="payments")
     ),
     path("api/user/", include("users.urls", namespace="users")),
-    path("api/media_api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/media_api/schema/",
+        SpectacularAPIView.as_view(),
+        name="schema"
+    ),
     path(
         "api/doc/swagger/",
         SpectacularSwaggerView.as_view(url_name="schema"),
@@ -51,4 +55,4 @@ urlpatterns = [
         name="redoc",
     ),
     path("__debug__/", include("debug_toolbar.urls")),
-    ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -7,7 +7,6 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.schemas import openapi
 
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
@@ -18,19 +17,18 @@ from borrowings.utils import create_stripe_session, create_stripe_session_for_fi
 @extend_schema(
     summary="Retrieve borrowings",
     description="This endpoint allows users to retrieve borrowings. "
-                "Non admin users can only view their own borrowings, "
-                "while admins can view all borrowings. "
-                "Additionally, borrowings can be filtered by 'is_active' "
-                "and 'user_id'.",
+    "Non admin users can only view their own borrowings, "
+    "while admins can view all borrowings. "
+    "Additionally, borrowings can be filtered by 'is_active' "
+    "and 'user_id'.",
     request=BorrowingSerializer,
     responses={
         200: BorrowingSerializer(many=True),
     },
 )
 class BorrowingViewSet(viewsets.ModelViewSet):
-    FINE_MULTIPLIER = 2  # Коефіцієнт для розрахунку штрафу
+    FINE_MULTIPLIER = 2  # multiplier for fine calculatio
 
-    # queryset = Borrowing.objects.all()
     queryset = Borrowing.objects.select_related("book", "user")
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated]
@@ -38,13 +36,13 @@ class BorrowingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
-        """Якщо користувач не адміністратор, показуємо тільки його позичення"""
+        """If user is not admin, show only his borrowings"""
         if not user.is_staff:
             queryset = Borrowing.objects.filter(user=user)
         else:
             queryset = Borrowing.objects.all()
 
-        """Фільтрація за параметром 'is_active'"""
+        """Filtration by parameter 'is_active'"""
         is_active = self.request.query_params.get("is_active")
         if is_active is not None:
             if is_active.lower() == "true":
@@ -52,7 +50,7 @@ class BorrowingViewSet(viewsets.ModelViewSet):
             elif is_active.lower() == "false":
                 queryset = queryset.filter(actual_return_date__isnull=False)
 
-        """Фільтрація за параметром 'user_id' для адміністраторів"""
+        """Filtration by parameter 'user_id' for admins"""
         user_id = self.request.query_params.get("user_id")
         if user_id is not None:
             try:
@@ -63,13 +61,9 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    @action(
-        detail=True,
-        methods=["POST"],
-        permission_classes=[IsAuthenticated]
-    )
+    @action(detail=True, methods=["POST"], permission_classes=[IsAuthenticated])
     def return_borrow(self, request, pk=None):
-        """Повернення позичення книги"""
+        """Return of book`s borrow"""
         borrowing = self.get_object()
 
         if borrowing.actual_return_date is not None:
@@ -78,31 +72,28 @@ class BorrowingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Оновлюємо дату повернення
+        # Update date of return
         borrowing.actual_return_date = timezone.now()
         # borrowing.save()
 
-        # Перевіряємо чи книга повернута вчасно
+        # Check if book returned in time
         expected_return_datetime = timezone.make_aware(
-            datetime.combine(
-                borrowing.expected_return_date,
-                datetime.min.time()
-            )
+            datetime.combine(borrowing.expected_return_date, datetime.min.time())
         )
 
         if borrowing.actual_return_date > expected_return_datetime:
-            days_of_overdue = (
-                    borrowing.actual_return_date - expected_return_datetime
-            ).days
+            actual_return_date = borrowing.actual_return_date
+            overdue_duration = actual_return_date - expected_return_datetime
+            days_of_overdue = overdue_duration.days
 
-            # Розрахунок суми штрафу
+            # payment for fine amount
             daily_fee = borrowing.book.daily_fee
             fine_amount = days_of_overdue * daily_fee * self.FINE_MULTIPLIER
 
-            # Створюємо Stripe-сесію для штрафу
+            # Create Stripe session for fine
             stripe_session = create_stripe_session_for_fine(borrowing, fine_amount)
 
-            # Створюємо платіж за штраф
+            # Create payment for fine
             borrowing.create_fine_payment(days_of_overdue)
             borrowing.book.inventory += 1
             borrowing.book.save()
@@ -110,14 +101,15 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
             return Response(
                 {
-                    "message": "The book has been successfully returned with a fine.",
+                    "message": "The book has been "
+                    "successfully returned with a fine.",
                     "fine_amount": fine_amount,
-                    "payment_url": stripe_session['session_url']
+                    "payment_url": stripe_session["session_url"],
                 },
-                status=status.HTTP_200_OK
+                status=status.HTTP_200_OK,
             )
 
-        # Оновлюємо дату повернення та збільшуємо inventory +1
+        # Update date of return and increase inventory +1
         borrowing.book.inventory += 1
 
         borrowing.book.save()
@@ -130,17 +122,20 @@ class BorrowingViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        """Метод для обробки логіки створення позичання"""
-        borrowing = serializer.save(user=self.request.user)  # Зберігаємо нове позичання та додаємо користувача
-        payment = create_stripe_session(borrowing)  # Створюємо сесію Stripe
+        """Method for handle of creation borrowing logic"""
+        # Save a new borrow and add user
+        borrowing = serializer.save(user=self.request.user)
+        payment = create_stripe_session(borrowing)  # Create Stripe session
 
-        # Якщо сесія була успішно створена, надсилаємо повідомлення в Telegram
+        # If session was successfully created, send message in Telegram
         if payment:
-            message = (f"Нове позичення:"
-                       f" '{borrowing.book.title}' для користувача: "
-                       f"{borrowing.user.username}. "
-                       f"Оплата: {payment.money_to_pay} USD.")
-            send_telegram_message(message)  # Надсилаємо повідомлення в Telegram
+            message = (
+                f"New borrow:"
+                f" '{borrowing.book.title}' for user: "
+                f"{borrowing.user.username}. "
+                f"payment: {payment.money_to_pay} USD."
+            )
+            send_telegram_message(message)  # Send msg in Telegram
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -149,8 +144,9 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         return Response(
             {
-                "borrowing": result['borrowing'].id,
-                "session_url": result['session_url'],  # Повертаємо URL платіжної сесії
+                "borrowing": result["borrowing"].id,
+                # Return URL of stripe session
+                "session_url": result["session_url"],
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
